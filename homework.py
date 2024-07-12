@@ -5,6 +5,8 @@ import sys
 import time
 
 import requests
+import telebot
+from http import HTTPStatus
 from dotenv import load_dotenv
 from telebot import TeleBot
 
@@ -57,8 +59,8 @@ def check_tokens():
         if not value:
             token_availability = False
             logger.critical(f'Отсутсвует токен {key}.')
-        if not token_availability:
-            raise KeyError('Missing tokens')
+    if not token_availability:
+        raise KeyError('Отсутсвуют токены')
 
     return token_availability
 
@@ -67,9 +69,17 @@ def send_message(bot, message):
     """Отправляет сообщение в Telegram-чат."""
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-        logger.debug('Сообщение отправлено')
+    except telebot.apihelper.ApiException as error:
+        logger.error(f'Ошибка отправки запроса в telegram {error}')
+        return False
+    except requests.RequestException as error:
+        logger.error(f'Ошибка при отпрваке запроса {error}')
+        return False
     except Exception as error:
-        logger.error(f'Ошибка отправки сообщения: {error}')
+        logging.exception(f'Ошибка отправки сообщения: {error}')
+    else:
+        logger.debug('Сообщение отправлено')
+    return True
 
 
 def get_api_answer(timestamp):
@@ -82,32 +92,39 @@ def get_api_answer(timestamp):
             params=payload
         )
     except requests.RequestException as error:
-        logger.error(f'Ошибка при запросе к API-сервиса: {error}')
-    if homework_statuses.status_code != 200:
+        logger.error(f'Ошибка при запросе к API-сервиса: {error}'
+                     f'Url запроса {ENDPOINT}'
+                     f'Заголовок запрса {HEADERS}'
+                     f'Параметры запроса {payload}'
+                     )
+    if homework_statuses.status_code != HTTPStatus.OK:
         logger.error('Ошибка при запросе к API-сервиса')
-        raise Exception(f'{homework_statuses.status_code}')
+        raise ValueError(f'При запросе к API-сервиса возникла ошибка: '
+                         f'{homework_statuses.status_code}')
     return homework_statuses.json()
 
 
 def check_response(response):
     """Проверяет ответ API на соответствие документации."""
     if not isinstance(response, dict):
-        raise TypeError("Ожидался словарь, но получен другой тип данных")
+        raise TypeError(f'Ожидался словарь, но получен другой тип данных '
+                        f'{type(response)}')
     if response.get('homeworks') == []:
         logger.debug('Статус домашней работы не изменился')
     if not isinstance(response.get('homeworks'), list):
-        raise TypeError("Ожидался список, но получен другой тип данных")
+        raise TypeError(f'Ожидался список, но получен другой тип данных '
+                        f'{type(response)}')
 
 
 def parse_status(homework):
     """Извлекает статус работы."""
-    homework_name = homework.get('homework_name')
     status = homework.get('status')
     verdict = HOMEWORK_VERDICTS.get(status)
     if 'homework_name' not in homework:
-        raise KeyError('missing key homework_name')
+        raise KeyError('Отсутсвуют ключ homework_name')
+    homework_name = homework.get('homework_name')
     if not verdict:
-        raise KeyError('undefined status homework')
+        raise KeyError(f'Неопределенный статус домашнего задания {verdict}')
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
@@ -141,4 +158,19 @@ def main():
 
 
 if __name__ == '__main__':
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        filename=(__file__) + '.log',
+    )
+
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s'
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
     main()
