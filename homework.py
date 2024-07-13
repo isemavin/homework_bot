@@ -1,5 +1,4 @@
 import logging
-from logging.handlers import RotatingFileHandler
 import os
 import sys
 import time
@@ -84,10 +83,10 @@ def get_api_answer(timestamp):
             params=payload
         )
     except requests.RequestException as error:
-        raise Exception(f'Ошибка при запросе к API-сервиса: {error} '
-                        f'Url запроса {ENDPOINT}'
-                        f'Заголовок запрса {HEADERS}'
-                        f'Параметры запроса {payload}')
+        raise exception.RequestFailed(f'Ошибка при запросе к API: {error} '
+                                      f'Url запроса {ENDPOINT}'
+                                      f'Заголовок запрса {HEADERS}'
+                                      f'Параметры запроса {payload}')
     if homework_statuses.status_code != HTTPStatus.OK:
         raise ValueError(f'При запросе к API-сервиса возникла ошибка: '
                          f'{homework_statuses.status_code}')
