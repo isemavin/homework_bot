@@ -10,26 +10,18 @@ from http import HTTPStatus
 from dotenv import load_dotenv
 from telebot import TeleBot
 
-load_dotenv()
+import exception
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filename='program.log',
-)
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-handler = RotatingFileHandler(
-    'my_logger.log',
-    maxBytes=50000000,
-    backupCount=5
-)
-logger.addHandler(handler)
+handler = logging.StreamHandler(sys.stdout)
 formatter = logging.Formatter(
     '%(asctime)s - %(levelname)s - %(message)s'
 )
 handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -84,21 +76,19 @@ def send_message(bot, message):
 
 def get_api_answer(timestamp):
     """Делает запрос к единственному эндпоинту API-сервиса."""
+    payload = {'from_date': timestamp}
     try:
-        payload = {'from_date': timestamp}
         homework_statuses = requests.get(
             ENDPOINT,
             headers=HEADERS,
             params=payload
         )
     except requests.RequestException as error:
-        logger.error(f'Ошибка при запросе к API-сервиса: {error}'
-                     f'Url запроса {ENDPOINT}'
-                     f'Заголовок запрса {HEADERS}'
-                     f'Параметры запроса {payload}'
-                     )
+        raise Exception(f'Ошибка при запросе к API-сервиса: {error} '
+                        f'Url запроса {ENDPOINT}'
+                        f'Заголовок запрса {HEADERS}'
+                        f'Параметры запроса {payload}')
     if homework_statuses.status_code != HTTPStatus.OK:
-        logger.error('Ошибка при запросе к API-сервиса')
         raise ValueError(f'При запросе к API-сервиса возникла ошибка: '
                          f'{homework_statuses.status_code}')
     return homework_statuses.json()
@@ -110,7 +100,7 @@ def check_response(response):
         raise TypeError(f'Ожидался словарь, но получен другой тип данных '
                         f'{type(response)}')
     if response.get('homeworks') == []:
-        logger.debug('Статус домашней работы не изменился')
+        raise exception.EmptyAnswer('Статус домашней работы не изменился')
     if not isinstance(response.get('homeworks'), list):
         raise TypeError(f'Ожидался список, но получен другой тип данных '
                         f'{type(response)}')
@@ -150,6 +140,12 @@ def main():
                 send_message(bot, message)
                 prev_status = homework.get('status')
                 timestamp = response.get('current_date')
+        except exception.EmptyAnswer as error:
+            message = f'Статус домашней работы не изменился: {error}'
+            logger.debug(message)
+        except ValueError as error:
+            message = f'Ошибка при запросе к API-сервиса: {error}'
+            logger.error(message)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message)
@@ -160,17 +156,8 @@ def main():
 if __name__ == '__main__':
     logging.basicConfig(
         level=logging.DEBUG,
-        format='%(asctime)s - %(levelname)s - %(message)s',
+        format=('%(asctime)s - %(levelname)s - %(message)s'),
         filename=(__file__) + '.log',
     )
-
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    handler = logging.StreamHandler(sys.stdout)
-    formatter = logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(message)s'
-    )
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
 
     main()
